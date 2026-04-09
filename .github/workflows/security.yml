@@ -1,0 +1,84 @@
+name: DevSecOps CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # -------------------------
+      # 1️⃣ Semgrep (SAST)
+      # -------------------------
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run Semgrep
+        id: semgrep
+        run: semgrep --config auto . || true
+
+      - name: Fail if Semgrep High Issues
+        if: ${{ steps.semgrep.outcome == 'failure' }}
+        run: |
+          echo "High-severity Semgrep issues found, failing pipeline."
+          exit 1
+
+      # -------------------------
+      # 2️⃣ Checkov (Terraform IaC)
+      # -------------------------
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Run Checkov
+        id: checkov
+        run: checkov -d . --compact || true
+
+      - name: Fail if Checkov High Issues
+        if: ${{ steps.checkov.outcome == 'failure' }}
+        run: |
+          echo "Checkov found high-severity IaC issues, failing pipeline."
+          exit 1
+
+      # -------------------------
+      # 3️⃣ Trivy (Container Scanning)
+      # -------------------------
+      - name: Download Trivy
+        run: |
+          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.45.0_Linux-64bit.tar.gz
+          tar zxvf trivy_0.45.0_Linux-64bit.tar.gz
+          sudo mv trivy /usr/local/bin/
+
+      - name: Build Docker Image
+        run: docker build -t myapp:latest .
+
+      - name: Run Trivy Scan
+        run: trivy image --exit-code 1 --severity HIGH myapp:latest
+
+      # -------------------------
+      # 4️⃣ OWASP ZAP (Dynamic Scan)
+      # -------------------------
+      - name: Start ZAP Daemon
+        run: docker run -d -u zap -p 8080:8080 owasp/zap2docker-stable zap.sh -daemon -host 0.0.0.0 -port 8080
+
+      - name: Run ZAP Scan
+        run: |
+          # Example: run scan against local app or deployed endpoint
+          docker exec $(docker ps -qf "ancestor=owasp/zap2docker-stable") zap-cli quick-scan http://localhost:8000
+
+      # -------------------------
+      # ✅ Summary / Badge
+      # -------------------------
+      - name: Publish Security Badge
+        uses: JasonEtco/create-badge@v2
+        with:
+          label: Security Checks
+          message: Passing
+          color: brightgreen
+          style: flat
+          path: SECURITY_BADGE.svg
