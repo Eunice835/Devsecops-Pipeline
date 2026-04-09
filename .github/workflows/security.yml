@@ -74,11 +74,4 @@ jobs:
       # -------------------------
       # ✅ Summary / Badge
       # -------------------------
-      - name: Publish Security Badge
-        uses: JasonEtco/create-badge@v2
-        with:
-          label: Security Checks
-          message: Passing
-          color: brightgreen
-          style: flat
-          path: SECURITY_BADGE.svg
+      
