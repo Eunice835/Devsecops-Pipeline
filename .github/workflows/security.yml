@@ -1,77 +1,107 @@
-name: DevSecOps CI/CD Pipeline
+name: DevSecOps Security Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   security:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+      - name: Stage 1 - Checkout code
+        uses: actions/checkout@v4
 
-      # -------------------------
-      # 1️⃣ Semgrep (SAST)
-      # -------------------------
-      - name: Install Semgrep
-        run: pip install semgrep
-
-      - name: Run Semgrep
-        id: semgrep
-        run: semgrep --config auto . || true
-
-      - name: Fail if Semgrep High Issues
-        if: ${{ steps.semgrep.outcome == 'failure' }}
+      - name: Stage 2 - Install dependencies
         run: |
-          echo "High-severity Semgrep issues found, failing pipeline."
-          exit 1
+          echo "Installing Semgrep + Checkov and jq..."
+          python -m pip install --upgrade pip
+          pip install semgrep checkov
+          sudo apt-get update
+          sudo apt-get install -y jq
 
-      # -------------------------
-      # 2️⃣ Checkov (Terraform IaC)
-      # -------------------------
-      - name: Install Checkov
-        run: pip install checkov
-
-      - name: Run Checkov
-        id: checkov
-        run: checkov -d . --compact || true
-
-      - name: Fail if Checkov High Issues
-        if: ${{ steps.checkov.outcome == 'failure' }}
+      - name: Stage 3 - Run Semgrep (fail on high/error findings)
         run: |
-          echo "Checkov found high-severity IaC issues, failing pipeline."
-          exit 1
+          echo "Running Semgrep SAST scan..."
+          semgrep scan --config auto --json --output semgrep-report.json app || true
+          HIGH_COUNT=$(jq '[.results[]? | select(.extra.severity == "ERROR")] | length' semgrep-report.json)
+          echo "Semgrep high/error findings: ${HIGH_COUNT}"
+          if [ "$HIGH_COUNT" -gt 0 ]; then
+            echo "Failing pipeline: HIGH/ERROR Semgrep findings detected."
+            exit 1
+          fi
 
-      # -------------------------
-      # 3️⃣ Trivy (Container Scanning)
-      # -------------------------
-      - name: Download Trivy
+      - name: Stage 4 - Run Checkov on /infra (fail on critical issues)
         run: |
-          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.45.0_Linux-64bit.tar.gz
-          tar zxvf trivy_0.45.0_Linux-64bit.tar.gz
-          sudo mv trivy /usr/local/bin/
+          echo "Running Checkov IaC scan..."
+          checkov -d infra --framework terraform -o json > checkov-report.json || true
+          CRITICAL_COUNT=$(jq '[.[].results.failed_checks[]? | select((.severity // "") == "CRITICAL")] | length' checkov-report.json)
+          echo "Checkov critical findings: ${CRITICAL_COUNT}"
+          if [ "$CRITICAL_COUNT" -gt 0 ]; then
+            echo "Failing pipeline: CRITICAL Checkov findings detected."
+            exit 1
+          fi
 
-      - name: Build Docker Image
-        run: docker build -t myapp:latest .
-
-      - name: Run Trivy Scan
-        run: trivy image --exit-code 1 --severity HIGH myapp:latest
-
-      # -------------------------
-      # 4️⃣ OWASP ZAP (Dynamic Scan)
-      # -------------------------
-      - name: Start ZAP Daemon
-        run: docker run -d -u zap -p 8080:8080 owasp/zap2docker-stable zap.sh -daemon -host 0.0.0.0 -port 8080
-
-      - name: Run ZAP Scan
+      - name: Stage 5 - Build Docker image
         run: |
-          # Example: run scan against local app or deployed endpoint
-          docker exec $(docker ps -qf "ancestor=owasp/zap2docker-stable") zap-cli quick-scan http://localhost:8000
+          echo "Building Docker image..."
+          docker build -t devsecops-vuln-app:latest .
 
-      # -------------------------
-      # ✅ Summary / Badge
-      # -------------------------
-      
+      - name: Stage 6 - Run Trivy scan (fail on HIGH/CRITICAL)
+        run: |
+          echo "Running Trivy image scan..."
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v ${{ github.workspace }}:/workdir \
+            aquasec/trivy:latest image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --format json \
+            --output /workdir/trivy-report.json \
+            devsecops-vuln-app:latest
+
+      - name: Stage 7 - Run OWASP ZAP baseline scan
+        run: |
+          echo "Starting app container..."
+          docker network create zap-net
+          docker run -d --name vulnerable-app --network zap-net -e LAB_MODE=true devsecops-vuln-app:latest
+          sleep 10
+          echo "Running ZAP baseline..."
+          docker run --rm --network zap-net \
+            -v ${{ github.workspace }}:/zap/wrk:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://vulnerable-app:3000 \
+            -J zap-report.json \
+            -r zap-report.html \
+            -m 5 || true
+          HIGH_RISK_COUNT=$(jq '[.site[].alerts[]? | select((.riskcode|tonumber) >= 3)] | length' zap-report.json)
+          echo "ZAP high/critical findings: ${HIGH_RISK_COUNT}"
+          if [ "$HIGH_RISK_COUNT" -gt 0 ]; then
+            echo "Failing pipeline: HIGH/CRITICAL ZAP findings detected."
+            exit 1
+          fi
+
+      - name: Stage 8 - Print final security summary
+        if: always()
+        run: |
+          echo "========== SECURITY SUMMARY =========="
+          echo "Semgrep report: semgrep-report.json"
+          echo "Checkov report: checkov-report.json"
+          echo "Trivy report: trivy-report.json"
+          echo "ZAP reports: zap-report.json, zap-report.html"
+          echo "======================================"
+
+      - name: Upload security artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-artifacts
+          path: |
+            semgrep-report.json
+            checkov-report.json
+            trivy-report.json
+            zap-report.json
+            zap-report.html

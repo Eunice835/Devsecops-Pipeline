@@ -1,0 +1,8 @@
+services:
+  vulnerable-app:
+    build: .
+    container_name: vulnerable-app
+    environment:
+      - LAB_MODE=true
+    ports:
+      - "3000:3000"

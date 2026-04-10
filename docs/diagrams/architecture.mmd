@@ -1,0 +1,50 @@
+flowchart TB
+  subgraph Dev["Developer Workstation"]
+    L1[Docker Compose]
+    L2[LAB_MODE=true]
+  end
+
+  subgraph SCM["Source Control"]
+    GH[GitHub Repo]
+  end
+
+  subgraph CICD["GitHub Actions"]
+    W1[ci.yml]
+    W2[security.yml]
+    W3[cd.yml]
+  end
+
+  subgraph Security["Security Stack"]
+    S1[Semgrep]
+    S2[Checkov]
+    S3[Trivy]
+    S4[OWASP ZAP]
+  end
+
+  subgraph AWS["AWS (Terraform Managed)"]
+    ECR[ECR/GHCR Image Source]
+    ECS[ECS Cluster]
+    FGT[Fargate Service]
+    LOG[CloudWatch Logs]
+    SG[Security Group]
+    IAM[IAM Roles]
+  end
+
+  GH --> W1
+  GH --> W2
+  GH --> W3
+
+  W2 --> S1
+  W2 --> S2
+  W2 --> S3
+  W2 --> S4
+
+  W3 --> ECR
+  W3 --> ECS
+  ECS --> FGT
+  FGT --> LOG
+  FGT --> SG
+  FGT --> IAM
+
+  L1 --> GH
+  L2 --> L1

@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+*.db
+node_modules/
+app/node_modules/
+npm-debug.log
+infra/.terraform/
+infra/.terraform.lock.hcl
+.DS_Store

@@ -1,0 +1,18 @@
+{
+  "name": "devsecops-vulnerable-app",
+  "version": "1.0.0",
+  "description": "Intentionally vulnerable Express app for DevSecOps scanning demos",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:lab": "LAB_MODE=true node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.1"
+  }
+}

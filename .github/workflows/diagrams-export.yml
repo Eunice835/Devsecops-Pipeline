@@ -1,0 +1,61 @@
+name: Export Diagrams PNG
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "docs/diagrams/*.mmd"
+      - ".github/workflows/diagrams-export.yml"
+      - "README.md"
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/diagrams/*.mmd"
+      - ".github/workflows/diagrams-export.yml"
+      - "README.md"
+
+jobs:
+  export-png:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create output directory
+        run: mkdir -p docs/diagrams/generated
+
+      - name: Render DFD PNG
+        run: |
+          docker run --rm -u "$(id -u):$(id -g)" \
+            -v "$PWD":/data \
+            ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.4.2 \
+            -i /data/docs/diagrams/dfd.mmd \
+            -o /data/docs/diagrams/generated/dfd.png \
+            -w 2048
+
+      - name: Render Architecture PNG
+        run: |
+          docker run --rm -u "$(id -u):$(id -g)" \
+            -v "$PWD":/data \
+            ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.4.2 \
+            -i /data/docs/diagrams/architecture.mmd \
+            -o /data/docs/diagrams/generated/architecture.png \
+            -w 2048
+
+      - name: Upload diagram artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagram-pngs
+          path: docs/diagrams/generated/*.png
+
+      - name: Commit generated PNGs (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: auto-export Mermaid diagrams to PNG"
+          file_pattern: docs/diagrams/generated/*.png

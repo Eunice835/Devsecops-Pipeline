@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          echo "Installing app dependencies..."
+          npm ci
+        working-directory: app
+
+      - name: Run tests
+        run: |
+          echo "Running unit tests..."
+          npm test
+        working-directory: app
+
+      - name: Build Docker image
+        run: |
+          echo "Building container image..."
+          docker build -t devsecops-vuln-app:ci .

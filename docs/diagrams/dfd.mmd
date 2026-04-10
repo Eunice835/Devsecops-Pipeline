@@ -1,0 +1,20 @@
+flowchart LR
+  U[Developer] --> G[GitHub Repository]
+  G --> A[GitHub Actions]
+  A --> CI[CI Workflow]
+  A --> SEC[Security Workflow]
+  A --> CD[CD Workflow]
+
+  CI --> T[Node Tests]
+  CI --> DB[Docker Build]
+
+  SEC --> SG[Semgrep SAST]
+  SEC --> CK[Checkov IaC]
+  SEC --> TV[Trivy Image Scan]
+  SEC --> ZP[OWASP ZAP DAST]
+  SEC --> AR[Security Artifacts]
+
+  CD --> GHCR[GHCR Image Registry]
+  CD --> TF[Terraform Apply/Plan]
+  TF --> ECS[AWS ECS Fargate Service]
+  ECS --> APP[Express App Container]
